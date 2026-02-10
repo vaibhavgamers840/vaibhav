@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>vaibhav project</title>
+    <title>AI Gesture 3D Particles</title>
     <style>
         body { margin: 0; background-color: #000; overflow: hidden; font-family: sans-serif; }
         canvas { display: block; }
@@ -19,7 +19,7 @@
         <div class="label">Current Mode</div>
         <div id="mode-text" class="status" style="color: #00ffff;">FOLLOWING HAND</div>
         <div class="label" style="margin-top: 15px;">Action</div>
-        <div class="status" style="font-size: 16px;">Pinch Fingers to Morph</div>
+        <div class="status" style="font-size: 16px;">Pinch = Heart / Open = Saturn</div>
     </div>
 
     <video id="webcam" autoplay playsinline></video>
@@ -29,12 +29,10 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
 
     <script type="module">
-        // --- CONFIGURATION ---
-        const particleCount = 3000;
-        let currentMode = 'follow'; // 'follow' or 'heart'
+        const particleCount = 5000;
+        let currentMode = 'follow'; 
         const modeText = document.getElementById('mode-text');
 
-        // --- THREE.JS SETUP ---
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -42,34 +40,48 @@
         document.body.appendChild(renderer.domElement);
         camera.position.z = 8;
 
-        // --- PARTICLE GENERATION ---
         const geometry = new THREE.BufferGeometry();
         const positions = new Float32Array(particleCount * 3);
         const heartPositions = new Float32Array(particleCount * 3);
+        const saturnPositions = new Float32Array(particleCount * 3);
 
-        // Generate Random Start Positions
-        for (let i = 0; i < particleCount * 3; i++) {
-            positions[i] = (Math.random() - 0.5) * 15;
-        }
-
-        // Generate Heart Shape Targets
-        function getHeartPoint(t) {
-            const x = 16 * Math.pow(Math.sin(t), 3);
-            const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
-            return new THREE.Vector3(x * 0.15, y * 0.15, 0); 
-        }
-
+        // --- PRE-CALCULATE SHAPES ---
         for (let i = 0; i < particleCount; i++) {
+            // Random start
+            positions[i*3] = (Math.random() - 0.5) * 20;
+            positions[i*3+1] = (Math.random() - 0.5) * 20;
+            positions[i*3+2] = (Math.random() - 0.5) * 20;
+
+            // Heart
             const t = Math.random() * Math.PI * 2;
-            const p = getHeartPoint(t);
-            heartPositions[i * 3] = p.x;
-            heartPositions[i * 3 + 1] = p.y;
-            heartPositions[i * 3 + 2] = p.z;
+            const hx = 16 * Math.pow(Math.sin(t), 3) * 0.15;
+            const hy = (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) * 0.15;
+            heartPositions[i * 3] = hx;
+            heartPositions[i * 3 + 1] = hy;
+            heartPositions[i * 3 + 2] = 0;
+
+            // Saturn
+            const radius = 1.5;
+            const ringRadius = 3;
+            const phi = Math.random() * Math.PI * 2;
+            const theta = Math.random() * Math.PI * 2;
+            if (i < particleCount * 0.4) {
+                // Sphere
+                saturnPositions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
+                saturnPositions[i * 3 + 1] = radius * Math.cos(phi);
+                saturnPositions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
+            } else {
+                // Ring
+                const r = ringRadius + (Math.random() - 0.5) * 0.5;
+                saturnPositions[i * 3] = r * Math.cos(theta);
+                saturnPositions[i * 3 + 1] = (Math.random()-0.5) * 0.2; // thin ring
+                saturnPositions[i * 3 + 2] = r * Math.sin(theta);
+            }
         }
 
         geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         const material = new THREE.PointsMaterial({
-            size: 0.06,
+            size: 0.05,
             color: 0x00ffff,
             transparent: true,
             blending: THREE.AdditiveBlending
@@ -78,6 +90,7 @@
         scene.add(points);
 
         const handTarget = new THREE.Vector3(0, 0, 0);
+        let handVelocity = 0;
 
         // --- ANIMATION LOOP ---
         function animate() {
@@ -92,59 +105,66 @@
                     tx = heartPositions[i3];
                     ty = heartPositions[i3+1];
                     tz = heartPositions[i3+2];
+                } else if (currentMode === 'saturn') {
+                    tx = saturnPositions[i3];
+                    ty = saturnPositions[i3+1];
+                    tz = saturnPositions[i3+2];
                 } else {
                     tx = handTarget.x + (Math.random() - 0.5) * 0.5;
                     ty = handTarget.y + (Math.random() - 0.5) * 0.5;
                     tz = handTarget.z;
                 }
 
-                // Smooth interpolation (Lerp)
                 positions[i3] += (tx - positions[i3]) * 0.08;
                 positions[i3+1] += (ty - positions[i3+1]) * 0.08;
                 positions[i3+2] += (tz - positions[i3+2]) * 0.08;
             }
 
+            // --- COLOR CHANGE BASED ON VELOCITY ---
+            const color = new THREE.Color();
+            color.setHSL(0.5 - Math.min(handVelocity * 2, 0.5), 1, 0.5); // Fast = Red, Slow = Cyan
+            material.color.lerp(color, 0.1);
+
             posAttr.needsUpdate = true;
-            points.rotation.y += 0.002; // Slow drift
+            points.rotation.y += 0.002;
             renderer.render(scene, camera);
         }
         animate();
 
-        // --- MEDIAPIPE HAND TRACKING ---
+        // --- MEDIAPIPE LOGIC ---
         const videoElement = document.getElementById('webcam');
+        let lastX = 0, lastY = 0;
         
         function onResults(results) {
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const hand = results.multiHandLandmarks[0];
                 const thumbTip = hand[4];
                 const indexTip = hand[8];
+                const middleTip = hand[12];
 
-                // Detect Pinch Gesture
-                const distance = Math.sqrt(
-                    Math.pow(thumbTip.x - indexTip.x, 2) + 
-                    Math.pow(thumbTip.y - indexTip.y, 2)
-                );
+                // Detect Gestures
+                const pinchDist = Math.sqrt(Math.pow(thumbTip.x - indexTip.x, 2) + Math.pow(thumbTip.y - indexTip.y, 2));
+                const openDist = Math.sqrt(Math.pow(indexTip.x - middleTip.x, 2) + Math.pow(indexTip.y - middleTip.y, 2));
 
-                if (distance < 0.05) {
-                    if(currentMode !== 'heart') {
-                        currentMode = 'heart';
-                        modeText.innerText = "HEART MODE";
-                        modeText.style.color = "#ff0066";
-                        material.color.setHex(0xff0066);
-                    }
+                if (pinchDist < 0.05) {
+                    currentMode = 'heart';
+                    modeText.innerText = "HEART MODE";
+                } else if (openDist > 0.1) {
+                    currentMode = 'saturn';
+                    modeText.innerText = "SATURN MODE";
                 } else {
-                    if(currentMode !== 'follow') {
-                        currentMode = 'follow';
-                        modeText.innerText = "FOLLOWING HAND";
-                        modeText.style.color = "#00ffff";
-                        material.color.setHex(0x00ffff);
-                    }
+                    currentMode = 'follow';
+                    modeText.innerText = "FOLLOWING HAND";
                 }
 
-                // Map index finger to 3D space
-                // We flip X because the camera is mirrored
+                // Map to 3D
                 handTarget.x = -(indexTip.x - 0.5) * 15; 
                 handTarget.y = -(indexTip.y - 0.5) * 10;
+                
+                // Calculate Velocity
+                handVelocity = Math.sqrt(Math.pow(handTarget.x - lastX, 2) + Math.pow(handTarget.y - lastY, 2));
+                lastX = handTarget.x;
+                lastY = handTarget.y;
             }
         }
 
@@ -157,12 +177,6 @@
             width: 640, height: 480
         });
         cameraFeed.start();
-
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
     </script>
 </body>
 </html>
